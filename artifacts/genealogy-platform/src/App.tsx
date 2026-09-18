@@ -46,14 +46,15 @@ const formatDate = (date: DatePart, alive: boolean) => {
   return alive ? `${dateText || 'Дата не указана'} · сейчас` : `${dateText || 'Дата не указана'}`;
 };
 const treePositions: Record<string, { left: string; top: string }> = {
-  mikhail: { left: '27%', top: '16%' },
-  natalia: { left: '57%', top: '16%' },
-  alexei: { left: '17%', top: '43%' },
-  elena: { left: '57%', top: '43%' },
-  sergei: { left: '4%', top: '70%' },
-  maria: { left: '27%', top: '70%' },
-  ivan: { left: '52%', top: '70%' },
-  anna: { left: '75%', top: '70%' },
+  sofia: { left: '39%', top: '7%' },
+  mikhail: { left: '27%', top: '29%' },
+  natalia: { left: '57%', top: '29%' },
+  alexei: { left: '17%', top: '51%' },
+  elena: { left: '57%', top: '51%' },
+  sergei: { left: '4%', top: '74%' },
+  maria: { left: '27%', top: '74%' },
+  ivan: { left: '52%', top: '74%' },
+  anna: { left: '75%', top: '74%' },
 };
 
 function ToastMessage({ message, onClose }: { message: string; onClose: () => void }) {
@@ -187,11 +188,10 @@ function TreePage() {
   const [addMode, setAddMode] = useState<'ancestor' | 'descendant' | null>(null);
   const [scale, setScale] = useState(1);
   const selected = people.find((person) => person.id === selectedId) || people[0];
-  const visibleIds = [...new Set(['mikhail', 'natalia', 'alexei', 'elena', 'sergei', 'maria', 'ivan', 'anna', selectedId])];
   return <AppShell><div className="main-content">
      <div className="page-header"><div><span className="kicker">семья воронцовых</span><h1>Семейное дерево</h1><p>Сохраняйте связи, чтобы ни одна ветвь не затерялась.</p></div><div className="header-actions"><Link href={`/person/${selected.id}`} className="btn btn-soft" data-testid="button-open-person"><UserRound size={15} /> Открыть карточку</Link><button className="btn btn-primary" onClick={() => setAddMode('ancestor')} data-testid="button-add-ancestor"><Plus size={16} /> Добавить предка</button></div></div>
     <div className="stats-row"><div className="content-card stat-card"><span className="kicker">людей в архиве</span><span className="stat-number">{people.length}</span><p>три поколения семьи</p></div><div className="content-card stat-card"><span className="kicker">самая ранняя дата</span><span className="stat-number">1904</span><p>Сергей Андреевич</p></div><div className="content-card stat-card"><span className="kicker">связей</span><span className="stat-number">{people.reduce((sum, person) => sum + person.parents.length, 0)}</span><p>между людьми</p></div></div>
-     <div className="tree-workspace" data-testid="tree-workspace"><div className="workspace-top"><div className="crumb"><BookOpen size={14} /> Архив / <strong>Воронцовы</strong></div><div className="zoom-tools"><button onClick={() => setScale((value) => Math.min(1.18, value + .06))} aria-label="Увеличить" data-testid="button-zoom-in"><ZoomIn size={15} /></button><button onClick={() => setScale(1)} aria-label="Сбросить масштаб" data-testid="button-reset-zoom"><span className="mono" style={{ fontSize: 9 }}>{Math.round(scale * 100)}%</span></button><button onClick={() => setScale((value) => Math.max(.86, value - .06))} aria-label="Уменьшить" data-testid="button-zoom-out"><ZoomOut size={15} /></button></div></div><div className="tree-canvas"><div style={{ position: 'absolute', inset: 0, transform: `scale(${scale})`, transformOrigin: 'center', transition: 'transform .3s ease' }}><svg className="tree-links" viewBox="0 0 1000 650" preserveAspectRatio="none"><path className="tree-link" d="M365 236 V258 H265 V280" /><path className="tree-link" d="M665 236 V280" /><path className="tree-link" d="M265 412 V430 H135 V455" /><path className="tree-link" d="M265 412 V430 H365 V455" /><path className="tree-link" d="M665 412 V430 H615 V455" /><path className="tree-link" d="M665 412 V430 H845 V455" /></svg>{visibleIds.map((id) => { const person = people.find((item) => item.id === id); return person ? <PersonNode key={person.id} person={person} selected={person.id === selectedId} onSelect={() => setSelectedId(person.id)} onDelete={() => { if (window.confirm(`Удалить ${person.name} из архива?`)) { deletePerson(person.id); toast('Запись удалена из дерева'); } }} onAddAncestor={() => setAddMode('ancestor')} onAddDescendant={() => setAddMode('descendant')} /> : null; })}</div></div><div className="tree-hint">Перетаскивайте и масштабируйте дерево</div></div>
+     <div className="tree-workspace" data-testid="tree-workspace"><div className="workspace-top"><div className="crumb"><BookOpen size={14} /> Архив / <strong>Воронцовы</strong></div><div className="zoom-tools"><button onClick={() => setScale((value) => Math.min(1.18, value + .06))} aria-label="Увеличить" data-testid="button-zoom-in"><ZoomIn size={15} /></button><button onClick={() => setScale(1)} aria-label="Сбросить масштаб" data-testid="button-reset-zoom"><span className="mono" style={{ fontSize: 9 }}>{Math.round(scale * 100)}%</span></button><button onClick={() => setScale((value) => Math.max(.86, value - .06))} aria-label="Уменьшить" data-testid="button-zoom-out"><ZoomOut size={15} /></button></div></div><div className="tree-canvas"><div style={{ position: 'absolute', inset: 0, transform: `scale(${scale})`, transformOrigin: 'center', transition: 'transform .3s ease' }}><svg className="tree-links" viewBox="0 0 1000 650" preserveAspectRatio="none"><path className="tree-link" d="M485 177 V183 H365 V188" /><path className="tree-link" d="M485 177 V183 H665 V188" /><path className="tree-link" d="M365 320 V327 H265 V331" /><path className="tree-link" d="M365 320 V327 H665 V331" /><path className="tree-link" d="M265 463 V470 H135 V481" /><path className="tree-link" d="M265 463 V470 H365 V481" /><path className="tree-link" d="M665 463 V470 H615 V481" /><path className="tree-link" d="M665 463 V470 H845 V481" /></svg>{people.map((person) => <PersonNode key={person.id} person={person} selected={person.id === selectedId} onSelect={() => setSelectedId(person.id)} onDelete={() => { if (window.confirm(`Удалить ${person.name} из архива?`)) { deletePerson(person.id); toast('Запись удалена из дерева'); } }} onAddAncestor={() => setAddMode('ancestor')} onAddDescendant={() => setAddMode('descendant')} />)}</div></div><div className="tree-hint">Перетаскивайте и масштабируйте дерево</div></div>
      {addMode && <AddRelativeModal person={selected} mode={addMode} onClose={() => setAddMode(null)} onAdd={({ name, year, bio }) => { const newPerson: Person = { id: `person-${Date.now()}`, name, birthDate: { day: '', month: '', year }, deathDate: { day: '', month: '', year: '' }, isAlive: false, bio: bio || 'Пока нет заметки об этом человеке.', parents: addMode === 'ancestor' ? [] : [selected.id] }; if (addMode === 'ancestor') addAncestor(newPerson, selected.id); else addDescendant(newPerson); setSelectedId(newPerson.id); setAddMode(null); toast(addMode === 'ancestor' ? 'Предок добавлен в архив' : 'Наследник добавлен в архив'); }} />}
   </div></AppShell>;
 }
