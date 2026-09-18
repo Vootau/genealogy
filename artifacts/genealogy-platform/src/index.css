@@ -189,15 +189,21 @@ a { color: inherit; text-decoration: none; }
 .tree-canvas::after { content: ''; position: absolute; inset: 0; background: radial-gradient(circle at center, transparent 30%, hsl(40 50% 98% / .52) 100%); pointer-events: none; }
 .tree-links { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .tree-link { stroke: hsl(var(--primary) / .25); stroke-width: 2; fill: none; }
-.person-node { position: absolute; width: 190px; padding: 15px; border: 1px solid hsl(var(--border)); border-radius: 14px; background: hsl(var(--card) / .96); box-shadow: 0 10px 22px hsl(215 33% 18% / .1); transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; z-index: 2; }
+.person-node { position: absolute; width: 190px; padding: 15px; border: 1px solid hsl(var(--border)); border-radius: 14px; background: hsl(var(--card) / .96); box-shadow: 0 10px 22px hsl(215 33% 18% / .1); transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; z-index: 2; cursor: pointer; }
 .person-node:hover, .person-node.selected { transform: translateY(-4px); border-color: hsl(var(--accent)); box-shadow: 0 15px 28px hsl(215 33% 18% / .14); }
-.person-node.selected { outline: 3px solid hsl(var(--accent) / .17); }
+.person-node.selected { outline: 3px solid hsl(var(--accent) / .17); z-index: 10; }
 .node-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .node-avatar { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font: 12px var(--app-font-mono); }
 .person-node h3 { margin: 13px 0 4px; font: 600 17px/1.05 var(--app-font-serif); }
 .person-node p { margin: 0; color: hsl(var(--muted-foreground)); font: 10px var(--app-font-mono); }
-.node-menu { border: 0; background: transparent; color: hsl(var(--muted-foreground)); padding: 2px; opacity: 0; transition: opacity .2s ease; }
-.person-node:hover .node-menu, .person-node.selected .node-menu { opacity: 1; }
+.node-menu-hint { color: hsl(var(--muted-foreground)); font: 9px var(--app-font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.node-action-menu { position: absolute; top: 63px; left: 12px; right: 12px; z-index: 12; padding: 5px; border: 1px solid hsl(var(--border)); border-radius: 11px; background: hsl(var(--card)); box-shadow: 0 14px 30px hsl(215 33% 18% / .16); animation: node-menu-in .16s ease both; }
+.node-action { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-radius: 7px; background: transparent; color: hsl(var(--foreground)); font: 600 11px var(--app-font-sans); text-align: left; cursor: pointer; }
+.node-action:hover { background: hsl(var(--secondary)); color: hsl(var(--primary)); }
+.node-action svg { flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
+.node-action-danger { color: hsl(var(--destructive)); }
+.node-action-danger:hover { background: hsl(var(--destructive) / .08); color: hsl(var(--destructive)); }
+@keyframes node-menu-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .tree-sidecard { position: absolute; z-index: 7; bottom: 17px; left: 18px; width: 225px; padding: 14px; border: 1px solid hsl(var(--border)); background: hsl(var(--card) / .92); border-radius: 12px; box-shadow: 0 10px 25px hsl(215 33% 18% / .08); }
 .tree-sidecard span { display: block; color: hsl(var(--muted-foreground)); font-size: 10px; }
 .tree-sidecard strong { display: block; margin-top: 6px; font: 600 17px var(--app-font-serif); }
