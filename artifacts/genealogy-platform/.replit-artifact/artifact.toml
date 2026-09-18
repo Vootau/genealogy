@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Родословная"
+description = "Защищённая платформа для формирования семейного дерева, редактирования биографий родственников и AI-поиска по семейной истории."
+version = "1.0.0"
+id = "artifacts/genealogy-platform"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23462
+
+[services.development]
+run = "pnpm --filter @workspace/genealogy-platform run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/genealogy-platform", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/genealogy-platform/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23462"
+BASE_PATH = "/"

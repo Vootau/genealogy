@@ -1,0 +1,201 @@
+Это исчерпывающее, архитектурно-безупречное Техническое Задание (ТЗ). Оно построено по принципам микросервисной архитектуры (Microservices), Zero Trust (нулевое доверие) и безопасности-by-design. 
+
+Каждый сервис здесь — независимый контейнер со своим жизненным циклом. Разработчики могут начать реализацию любого модуля, опираясь исключительно на этот документ, не опасаясь сломать смежные части.
+
+---
+
+# ПОЛНОЕ ТЕХНИЧЕСКОЕ ЗАДАНИЕ (ТЗ)
+**Проект:** Защищенная платформа для формирования генеалогического дерева с AI-семантическим поиском.
+
+## ЧАСТЬ 1. ГЛОБАЛЬНАЯ АРХИТЕКТУРА И ИНФРАСТРУКТУРА
+
+### 1.1. Топология микросервисов
+Проект состоит из 6 независимых сервисов, общающихся исключительно по REST/gRPC API через защищенный API Gateway.
+
+1.  **Frontend Static (Лендинг):** Чистый HTML/CSS. Отдает главную страницу и контакты.
+2.  **Frontend SPA (Приложение):** React + TypeScript (Vite). Отдает интерфейс дерева, персональные страницы и поиск.
+3.  **API Gateway & Auth Service:** Node.js (NestJS или Express). Единая точка входа для SPA. Маршрутизация запросов, 2FA, проверка JWT-токенов, RBAC (Role-Based Access Control).
+4.  **Data Service (CRUD):** Node.js. Взаимодействует с NoSQL. Отвечает за создание, чтение, обновление, удаление узлов дерева и шифрование PII (Personal Identifiable Information).
+5.  **AI RAG Service:** Python (FastAPI). Взаимодействует с FAISS и MicroLLM. Отвечает за векторизацию текстов и генерацию ответов.
+6.  **Storage Service:** S3-совместимое хранилище (MinIO или AWS S3) + Node.js микросервис-прокси для выдачи Pre-signed URLs на загрузку фото.
+
+### 1.2. Информационная безопасность (Security & Compliance)
+Так как обрабатываются персональные данные (ФИО, даты, фото, биографии), применяются следующие меры:
+
+*   **Транспорт:** Весь трафик между клиентом и сервисами, а также *между сервисами* (service-to-service) шифруется через TLS 1.3.
+*   **Аутентификация (2FA):** 
+    *   Обязательная двухфакторная аутентификация (TOTP — Time-based One-Time Password, стандарт RFC 6238). Поддержка Google Authenticator/Authy.
+    *   При первичном входе (Login + Password) сервер генерирует короткоживущий `challenge_token`. При вводе 2FA-кода выдается пара: `access_token` (JWT, TTL 15 мин) и `refresh_token` (JWT, TTL 7 дней, HttpOnly, Secure cookie).
+*   **Шифрование данных в покое (At-Rest Encryption):**
+    *   NoSQL база данных шифруется на уровне диска (Transparent Data Encryption).
+    *   **Поле-уровневое шифрование (Field-Level Encryption):** Персональные данные (Имя, Даты, Биография) шифруются алгоритмом AES-256-GCM в Data Service *до* записи в БД. Ключи шифрования хранятся в Vault (например, HashiCorp Vault или AWS KMS), БД видит только ciphertext.
+*   **Безопасность медиа:** Фотографии загружаются напрямую в S3-хранилище через Pre-signed URLs (чтобы не нагружать API Gateway). Доступ к чтению фото также выдается через временные Pre-signed URLs, привязанные к валидному JWT.
+*   **Заголовки:** Строгие CSP, HSTS, X-Frame-Options (DENY), X-Content-Type-Options (nosniff).
+
+---
+
+## ЧАСТЬ 2. API КОНТРАКТЫ (Между сервисами)
+
+Разработка фронтенда и бэкенда ведется параллельно. SPA использует моки, пока бэкенд не реализует контракты.
+
+### 2.1. Auth & API Gateway (Порт 8080)
+*   `POST /api/auth/register` -> Создает пользователя (хэш пароля Argon2id). Возвращает секрет для 2FA (QR-код).
+*   `POST /api/auth/login` -> Принимает email, password. Возвращает `challenge_token`.
+*   `POST /api/auth/verify-2fa` -> Принимает `challenge_token` + `totp_code`. Возвращает `access_token` (JWT) + `refresh_token` (Cookie).
+*   Все запросы ниже требуют заголовка `Authorization: Bearer <access_token>`.
+
+### 2.2. Data Service (CRUD) (Порт 8081)
+*   `GET /api/tree` -> Возвращает расшифрованные данные узлов текущего аутентифицированного пользователя.
+*   `POST /api/person` -> Создает пустой узел. Тело: `{"tree_id": "string"}`.
+*   `PUT /api/person/:id` -> Обновление данных. Тело: `{"name": "string", "birth_date": {...}, "bio": "string"}`.
+    *   *Событие:* При обновлении поля `bio`, Data Service отправляет асинхронное сообщение (через RabbitMQ или HTTP-вызов) в AI RAG Service для переиндексации.
+*   `DELETE /api/person/:id` -> Удаляет узел и каскадно отвязывает/удаляет предков (согласно логике дерева).
+*   `GET /api/person/:id` -> Возвращает полные расшифрованные данные персоны.
+
+### 2.3. Storage Service (Порт 8082)
+*   `GET /api/storage/upload-url` -> Возвращает Pre-signed URL для PUT-запроса (загрузка фото с клиента напрямую в S3).
+*   `GET /api/storage/download-url/:file_id` -> Возвращает временный Pre-signed URL для чтения фото.
+
+### 2.4. AI RAG Service (Порт 8083)
+*   `POST /api/rag/index` -> Внутренний эндпоинт (вызывает Data Service). Тело: `{"person_id": "string", "text": "биография"}`.
+*   `POST /api/rag/search` -> Тело: `{"query": "кто работал на земле"}`. Возвращает JSON:
+    ```json
+    {
+      "answer": "На основе данных дерева, на земле работали...",
+      "sources": [
+        {"person_id": "uuid1", "name": "Иван", "snippet": "...работал агрономом..."},
+        {"person_id": "uuid2", "name": "Мария", "snippet": "...трудилась в колхозе..."}
+      ]
+    }
+    ```
+
+---
+
+## ЧАСТЬ 3. ДЕТАЛЬНОЕ ТЗ ПО СЕРВИСАМ И UI
+
+### 3.1. Frontend Static & SPA (Приложение)
+**Стек:** React 18+, TypeScript, Vite, React Router v6, Zustand (state), TailwindCSS, React Flow.
+
+**Маршрутизация (Routing):**
+*   `/` (Static) — Отображение SVG-дерева. Кнопка "Войти" -> `/login`.
+*   `/login`, `/setup-2fa` (SPA) — Формы аутентификации.
+*   `/tree` (SPA) — Рабочая область.
+*   `/person/:id` (SPA) — Страница жизнеописания.
+*   `/search` (SPA) — AI-поиск.
+
+**3.1.1. Страница `/tree` (React Flow):**
+*   **Компонент `<PersonNode>`:** Прямоугольник. Содержит:
+    *   `<Handle type="target" position={Position.Top} />` (вход связи от потомка).
+    *   Имя (кликабельная ссылка `<Link to="/person/${id}">`).
+    *   Строка дат: Форматирование из JSON (например, если есть только год рождения: `1920 - ?`).
+    *   Кнопка `[+ Предки]`: При клике вызывает `POST /api/person` дважды, создает связи и обновляет `nodes` и `edges` в React Flow.
+    *   Кнопка `[x Удалить]`: Вызов модалки подтверждения. Удаляет узел из state и отправляет `DELETE /api/person/:id`.
+    *   `<Handle type="source" position={Position.Bottom} />` (выход связи к предкам).
+*   **Inline Edit:** Двойной клик по узлу превращает его в мини-форму: `<input>` для имени и компонент `<PartialDatePicker />`. При `onBlur` отправляется `PUT /api/person/:id`.
+
+**3.1.2. Компонент `<PartialDatePicker />`:**
+*   Три независимых поля (Day, Month, Year).
+*   Day: `<select>` (1-31) + опция `null` ("--").
+*   Month: `<select>` (Январь-Декабрь) + опция `null` ("--").
+*   Year: `<input type="number">` (валидация от 1500 до текущего года).
+*   Возвращает объект: `{ day: number | null, month: number | null, year: number | null }`.
+
+**3.1.3. Страница `/person/:id`:**
+*   Левая колонка: Аватар. При клике вызывается `GET /api/storage/upload-url`, затем PUT-запрос файлом, затем `PUT /api/person/:id` с новым `photo_id`.
+*   ФИО: Редактируемый инпут.
+*   Даты рождения/смерти: Два компонента `<PartialDatePicker />`. Чекбокс "Жив" блокирует селекторы смерти.
+*   Правая колонка: `<textarea>` для биографии. Автосохранение по таймеру (debounce 2 секунды) или по кнопке "Сохранить". Статус сохранения отображается текстом ("Сохранение...", "Сохранено", "Ошибка").
+
+---
+
+### 3.2. Data Service (Node.js + NoSQL)
+**Стек:** Node.js, NestJS, Mongoose/MongoDB, crypto (AES-256-GCM).
+
+**3.2.1. Схема БД (MongoDB):**
+*Хранится в зашифрованном виде. Показана логическая структура.*
+*   **Collection: `users`** -> `email`, `password_hash`, `totp_secret`, `role`.
+*   **Collection: `trees`** -> `owner_id`, `root_node_id`.
+*   **Collection: `persons`** -> 
+    *   `tree_id` (Index)
+    *   `ciphertext_name` (IV + Encrypted string)
+    *   `ciphertext_birth_date` (Encrypted JSON)
+    *   `ciphertext_death_date` (Encrypted JSON)
+    *   `is_alive` (Boolean)
+    *   `photo_id` (String)
+    *   `ciphertext_bio` (Encrypted Text)
+    *   `parents` (Array of ObjectIDs)
+
+**3.2.2. Логика шифрования:**
+При `GET /api/person/:id` Data Service запрашивает документ у MongoDB, извлекает крипто-ключ из Vault по ID пользователя (или общую сессию), расшифровывает поля и отдает чистый JSON во Frontend. Внутренние сети (БД) никогда не видят открытые данные.
+
+---
+
+### 3.3. AI RAG Service (Python + FAISS + LLM)
+**Стек:** Python 3.11, FastAPI, FAISS (CPU), sentence-transformers, Ollama (для MicroLLM).
+
+**3.3.1. Модели и параментры:**
+*   **Embedding модель:** `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (поддерживает русский язык, генерирует векторы размерностью 384).
+*   **Vector Store (FAISS):** Индекс `IndexFlatIP` (Inner Product). Хранится в памяти Python-сервиса. Размер: 384.
+*   **MicroLLM:** Запускается локально через Ollama. Модель: `phi3:mini` или `qwen2:7b-instruct`. Системный промпт строго настроен на извлечение фактов только из переданного контекста.
+
+**3.3.2. Процесс индексации (Пайплайн записи):**
+1.  Frontend сохраняет текст в Data Service.
+2.  Data Service шлет POST на `http://ai-service:8083/api/rag/index`.
+3.  Python принимает `{person_id, text}`.
+4.  Пропускает `text` через Embedding-модель -> получает вектор `[0.12, -0.03, ...]`.
+5.  Удаляет старый вектор для этого `person_id` из FAISS (если был).
+6.  Добавляет новый вектор в FAISS и обновляет маппинг-словарь `{faiss_index_id: person_id}`.
+
+**3.3.3. Процесс поиска (Пайплайн чтения):**
+1.  Пользователь вводит "Кто воевал?".
+2.  Запрос летит в Data Service -> Python.
+3.  Текст запроса векторизуется.
+4.  FAISS ищет 3 ближайших вектора (Top-K=3). Возвращает 3 `person_id`.
+5.  Python-сервис делает внутренний запрос к Data Service: "Дай расшифрованные тексты биографий для этих 3 ID". *(Прим: здесь Data Service должен расшифровать данные для внутреннего сервиса)*.
+6.  Python формирует промпт для LLM:
+    ```text
+    System: Ты ассистент-историк. Основываясь ТОЛЬКО на предоставленных биографиях, ответь на вопрос пользователя. Если в текстах нет ответа, скажи "Информация не найдена".
+    Context:
+    Биография Ивана: [Текст...]
+    Биография Марии: [Текст...]
+    User: Кто воевал?
+    ```
+7.  MicroLLM генерирует ответ.
+8.  Python возвращает ответ и массив `sources` в SPA.
+
+---
+
+### 3.4. Storage Service
+**Стек:** Node.js, AWS SDK (для S3/MinIO).
+
+*   **Загрузка:** SPA запрашивает `GET /api/storage/upload-url?mime=image/webp`. Сервис генерирует Pre-signed URL для S3 (метод PUT, TTL 60 сек). SPA грузит файл напрямую. SPA сообщает Data Service `photo_id`.
+*   **Чтение:** SPA рендерит страницу. Вместо прямых ссылок на фото запрашивает `GET /api/storage/download-url/:photo_id`. Сервис возвращает Pre-signed URL (GET, TTL 5 мин). SPA подставляет в `<img src="...">`.
+*   **Ограничения:** Только форматы `jpg, png, webp`. Лимит размера файла (проверяется на уровне S3 bucket policy) — 5 MB.
+
+---
+
+## ЧАСТЬ 4. ТРЕБОВАНИЯ К РАЗРАБОТКЕ И ИНФРАСТРУКТУРЕ DEVOPS
+
+Для независимой разработки и деплоя проект контейнеризован.
+
+**4.1. Docker Compose (Окружение разработки)**
+В корне проекта лежит `docker-compose.yml`, поднимающий:
+*   `mongo-db` (БД)
+*   `minio` (S3)
+*   `ai-service` (Python + Ollama)
+*   `api-gateway` (Node)
+*   `data-service` (Node)
+
+**4.2. Логирование и мониторинг**
+*   Все сервисы пишут логи в формате JSON (Structured Logging).
+*   Трассировка: Заголовки `X-Request-ID` генерируются в API Gateway и прокидываются во все сервисы (включая Python), чтобы отслеживать полный путь запроса (например, от SPA до LLM).
+
+**4.3. План разработки (Milestones)**
+1.  **Milestone 1:** Настройка инфраструктуры (Docker), API Gateway, 2FA, JWT.
+2.  **Milestone 2:** Data Service (CRUD, шифрование), NoSQL.
+3.  **Milestone 3:** Frontend SPA (React Flow, PartialDatePicker, связь с API).
+4.  **Milestone 4:** Storage Service (S3 загрузка/чтение).
+5.  **Milestone 5:** AI RAG Service (FAISS, Ollama, интеграция промптов).
+
+---
+*Документ полностью описывает бизнес-логику, контракты API, модели данных, алгоритмы шифрования и AI-пайплайн. Разработчики могут приступать к реализации любой из частей, используя Swagger/OpenAPI спеку, сгенерированную из данного ТЗ.*
