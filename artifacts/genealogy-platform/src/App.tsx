@@ -54,7 +54,7 @@ const formatDate = (date: DatePart, alive: boolean) => {
 type DiagramPosition = { left: number; top: number };
 type DiagramLayout = { width: number; height: number; positions: Record<string, DiagramPosition> };
 const TREE_CARD_WIDTH = 280;
-const TREE_CARD_HEIGHT = 112;
+const TREE_CARD_HEIGHT = 100;
 
 const birthYear = (person: Person) => Number.parseInt(person.birthDate.year, 10) || Number.MAX_SAFE_INTEGER;
 

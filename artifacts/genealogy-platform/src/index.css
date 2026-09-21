@@ -199,15 +199,15 @@ a { color: inherit; text-decoration: none; }
 .current-label { top: 112px; }
 .parents-label { top: 342px; }
 .compact-empty { position: absolute; top: 385px; left: 50%; transform: translateX(-50%); color: hsl(var(--muted-foreground)); font-size: 12px; white-space: nowrap; }
-.person-node { position: absolute; box-sizing: border-box; width: 280px; height: 112px; padding: 12px; border: 1px solid hsl(var(--border)); border-radius: 14px; background: hsl(var(--card) / .96); box-shadow: 0 10px 22px hsl(215 33% 18% / .1); transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; z-index: 2; cursor: pointer; }
+.person-node { position: absolute; box-sizing: border-box; width: 280px; height: 100px; padding: 14px; border: 1px solid hsl(var(--border)); border-radius: 14px; background: hsl(var(--card) / .96); box-shadow: 0 10px 22px hsl(215 33% 18% / .1); transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease; z-index: 2; cursor: pointer; }
 .person-node:hover, .person-node.selected { transform: translateY(-4px); border-color: hsl(var(--accent)); box-shadow: 0 15px 28px hsl(215 33% 18% / .14); }
 .person-node.selected { outline: 3px solid hsl(var(--accent) / .17); z-index: 10; }
-.node-card-grid { height: 100%; display: grid; grid-template-columns: 82px minmax(0, 1fr); grid-template-rows: repeat(3, 1fr); gap: 0 13px; }
-.person-node .node-avatar { width: 82px; height: 86px; grid-row: 1 / -1; align-self: center; display: grid; place-items: center; overflow: hidden; border: 1px solid hsl(var(--primary) / .25); border-radius: 8px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font: 12px var(--app-font-mono); }
+.node-card-grid { height: 100%; display: grid; grid-template-columns: 72px minmax(0, 1fr); grid-template-rows: repeat(3, auto); align-items: center; gap: 0 12px; }
+.person-node .node-avatar { width: 72px; height: 72px; grid-row: 1 / -1; align-self: center; display: grid; place-items: center; overflow: hidden; border: 1px solid hsl(var(--primary) / .25); border-radius: 8px; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font: 12px var(--app-font-mono); }
 .person-node .node-avatar img { width: 100%; height: 100%; object-fit: cover; }
 .person-node .node-avatar.placeholder { width: 58px; height: 58px; justify-self: center; border-radius: 50%; }
-.node-copy { min-width: 0; display: grid; grid-template-rows: repeat(3, 1fr); align-items: center; }
-.node-surname, .node-first-name, .node-patronymic { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: hsl(var(--foreground)); font: 600 16px/1.05 var(--app-font-serif); }
+.node-copy { min-width: 0; align-self: center; display: grid; grid-template-rows: repeat(3, auto); align-content: center; justify-items: start; }
+.node-surname, .node-first-name, .node-patronymic { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: hsl(var(--foreground)); font: 600 15px/1.5 var(--app-font-serif); }
 .node-surname { color: hsl(var(--primary)); }
 .node-action-menu { position: absolute; top: 63px; left: 12px; right: 12px; z-index: 12; padding: 5px; border: 1px solid hsl(var(--border)); border-radius: 11px; background: hsl(var(--card)); box-shadow: 0 14px 30px hsl(215 33% 18% / .16); animation: node-menu-in .16s ease both; }
 .node-action { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-radius: 7px; background: transparent; color: hsl(var(--foreground)); font: 600 11px var(--app-font-sans); text-align: left; cursor: pointer; }
@@ -344,8 +344,8 @@ a { color: inherit; text-decoration: none; }
   .workspace-top { top: 12px; left: 12px; right: 12px; }
   .crumb { max-width: 160px; overflow: hidden; white-space: nowrap; }
   .tree-hint { display: none; }
-  .person-node { width: 280px; height: 112px; padding: 12px; }
-  .person-node .node-avatar { width: 82px; height: 86px; font-size: 10px; }
+  .person-node { width: 280px; height: 100px; padding: 14px; }
+  .person-node .node-avatar { width: 72px; height: 72px; font-size: 10px; }
   .bio-layout { grid-template-columns: 1fr; }
   .profile-card { position: static; display: grid; grid-template-columns: 105px 1fr; gap: 0 16px; align-items: center; padding: 16px; }
   .profile-photo { grid-row: span 3; }
