@@ -22,6 +22,8 @@ type SearchResult = { answer: string; sources: string[] };
 
 const initialPeople: Person[] = [
   { id: 'alexei', name: 'Алексей Петрович Воронцов', birthDate: { day: '12', month: '03', year: '1931' }, deathDate: { day: '27', month: '11', year: '2008' }, isAlive: false, bio: 'Инженер-строитель, собиратель старых карт и человек редкого терпения. После войны восстановил дом родителей в Костроме. В семье его помнят за тихий смех и привычку записывать всё важное в клетчатую тетрадь.', parents: ['sergei', 'maria'] },
+  { id: 'oleg', name: 'Олег Андреевич Воронцов', birthDate: { day: '03', month: '02', year: '1929' }, deathDate: { day: '', month: '', year: '1998' }, isAlive: false, bio: 'Старший сын Сергея и Марии. В семейном архиве пока нет сведений о его наследниках.', parents: ['sergei', 'maria'] },
+  { id: 'konstantsia', name: 'Констанция Андреевна Воронцова', birthDate: { day: '19', month: '05', year: '1933' }, deathDate: { day: '', month: '', year: '2004' }, isAlive: false, bio: 'Дочь Сергея и Марии. В семейном архиве пока нет сведений о её наследниках.', parents: ['sergei', 'maria'] },
   { id: 'elena', name: 'Елена Михайловна Воронцова', birthDate: { day: '05', month: '09', year: '1935' }, deathDate: { day: '14', month: '02', year: '2012' }, isAlive: false, bio: 'Учительница русского языка. Вела школьный хор и всегда хранила письма в коробке из-под чая.', parents: ['ivan', 'anna'] },
   { id: 'sergei', name: 'Сергей Андреевич Воронцов', birthDate: { day: '08', month: '06', year: '1904' }, deathDate: { day: '19', month: '01', year: '1974' }, isAlive: false, bio: 'Железнодорожник из Ярославской губернии. Умел чинить часы и никогда не опаздывал к вечернему чаю.', parents: [] },
   { id: 'maria', name: 'Мария Ильинична Воронцова', birthDate: { day: '22', month: '10', year: '1908' }, deathDate: { day: '', month: '', year: '1981' }, isAlive: false, bio: 'Работала в библиотеке. По семейному рассказу, именно она научила детей бережно обращаться с книгами.', parents: [] },
@@ -32,7 +34,7 @@ const initialPeople: Person[] = [
   { id: 'sofia', name: 'Софья Михайловна Воронцова', birthDate: { day: '14', month: '08', year: '1996' }, deathDate: { day: '', month: '', year: '' }, isAlive: true, bio: 'Изучает городскую антропологию. Собирает устные рассказы и старые рецепты.', parents: ['mikhail', 'natalia'] },
 ];
 
-type ArchiveContextValue = { people: Person[]; updatePerson: (person: Person) => void; addAncestor: (person: Person, parentId: string) => void; addDescendant: (person: Person) => void; deletePerson: (id: string) => void; toast: (message: string) => void };
+type ArchiveContextValue = { people: Person[]; updatePerson: (person: Person) => void; addAncestor: (person: Person, parentId: string) => void; addDescendant: (person: Person) => void; addSibling: (person: Person) => void; deletePerson: (id: string) => void; toast: (message: string) => void };
 const ArchiveContext = createContext<ArchiveContextValue | null>(null);
 function useArchive() {
   const context = useContext(ArchiveContext);
@@ -47,6 +49,7 @@ const nameLines = (name: string) => {
   const firstName = words.shift() || 'Имя не указано';
   return { surname: surname.toUpperCase(), firstName, patronymic: words.join(' ') };
 };
+const surnameOf = (name: string) => name.trim().split(/\s+/).filter(Boolean).pop() || '';
 const formatDate = (date: DatePart, alive: boolean) => {
   const dateText = [date.day, date.month, date.year].filter(Boolean).join('.');
   return alive ? `${dateText || 'Дата не указана'} · сейчас` : `${dateText || 'Дата не указана'}`;
@@ -72,7 +75,6 @@ function buildFullTreeLayout(people: Person[], rootId: string): DiagramLayout {
     ];
     relatedIds.forEach((relatedId) => {
       if (!people.some((person) => person.id === relatedId) || depth.has(relatedId)) return;
-      const related = people.find((person) => person.id === relatedId);
       const isParent = current.parents.includes(relatedId);
       depth.set(relatedId, currentDepth + (isParent ? 1 : -1));
       queue.push(relatedId);
@@ -90,20 +92,53 @@ function buildFullTreeLayout(people: Person[], rootId: string): DiagramLayout {
   });
   const orderedLevels = [...levels.entries()].sort(([a], [b]) => a - b);
   const cardWidth = TREE_CARD_WIDTH;
-  const columnGap = 70;
+  const nodeGap = 54;
+  const branchGap = 100;
   const rowGap = 58;
-  const width = Math.max(1280, ...orderedLevels.map(([, level]) => level.length * cardWidth + Math.max(0, level.length - 1) * columnGap + 120));
+  const levelGroups = orderedLevels.map(([depthValue, level]) => {
+    const grouped = new Map<string, Person[]>();
+    level.forEach((person) => {
+      const parentKey = person.parents.filter((parentId) => people.some((candidate) => candidate.id === parentId)).sort().join('|');
+      const key = parentKey ? `siblings:${parentKey}` : `person:${person.id}`;
+      grouped.set(key, [...(grouped.get(key) || []), person]);
+    });
+    return {
+      depth: depthValue,
+      groups: [...grouped.values()].map((group, originalIndex) => ({
+        people: [...group].sort((a, b) => birthYear(a) - birthYear(b) || a.name.localeCompare(b.name, 'ru')),
+        originalIndex,
+      })),
+    };
+  });
+  const rowWidth = (groups: { people: Person[] }[]) => groups.reduce((total, group, index) => total + group.people.length * cardWidth + Math.max(0, group.people.length - 1) * nodeGap + (index > 0 ? branchGap : 0), 0);
+  const width = Math.max(1280, ...levelGroups.map((level) => rowWidth(level.groups) + 120));
   const height = Math.max(720, orderedLevels.length * TREE_CARD_HEIGHT + Math.max(0, orderedLevels.length - 1) * rowGap + 120);
   const positions: Record<string, DiagramPosition> = {};
 
-  orderedLevels.forEach(([, level], rowIndex) => {
-    const sorted = [...level].sort((a, b) => birthYear(a) - birthYear(b) || a.name.localeCompare(b.name, 'ru'));
-    const rowWidth = sorted.length * cardWidth + Math.max(0, sorted.length - 1) * columnGap;
-    const startLeft = (width - rowWidth) / 2;
-    sorted.forEach((person, index) => {
-      positions[person.id] = { left: startLeft + index * (cardWidth + columnGap), top: 56 + rowIndex * (TREE_CARD_HEIGHT + rowGap) };
+  const placeLevels = () => {
+    const previousPositions = { ...positions };
+    levelGroups.forEach((level, rowIndex) => {
+      const sortedGroups = [...level.groups].sort((a, b) => {
+        const relatedPosition = (group: { people: Person[]; originalIndex: number }) => {
+          const related = group.people.flatMap((member) => people.filter((candidate) => candidate.parents.includes(member.id) || member.parents.includes(candidate.id)));
+          const relatedCenters = related.map((person) => previousPositions[person.id]).filter(Boolean).map((position) => position.left + cardWidth / 2);
+          return relatedCenters.length ? relatedCenters.reduce((sum, center) => sum + center, 0) / relatedCenters.length : group.originalIndex;
+        };
+        return relatedPosition(a) - relatedPosition(b) || a.originalIndex - b.originalIndex;
+      });
+      const levelWidth = rowWidth(sortedGroups);
+      let left = (width - levelWidth) / 2;
+      sortedGroups.forEach((group) => {
+        group.people.forEach((person) => {
+          positions[person.id] = { left, top: 56 + rowIndex * (TREE_CARD_HEIGHT + rowGap) };
+          left += cardWidth + nodeGap;
+        });
+        left += branchGap - nodeGap;
+      });
     });
-  });
+  };
+  placeLevels();
+  for (let pass = 0; pass < 6; pass += 1) placeLevels();
   return { width, height, positions };
 }
 
@@ -209,7 +244,7 @@ function AppShell({ children }: { children: ReactNode }) {
   return <div className="app-layout"><AppSidebar /><main className="main-area">{children}</main></div>;
 }
 
-function PersonNode({ person, selected, onSelect, onDelete, onAddAncestor, onAddDescendant, position }: { person: Person; selected: boolean; onSelect: () => void; onDelete: () => void; onAddAncestor: () => void; onAddDescendant: () => void; position?: { left: string | number; top: string | number } }) {
+function PersonNode({ person, selected, onSelect, onDelete, onAddAncestor, onAddDescendant, onAddSibling, position }: { person: Person; selected: boolean; onSelect: () => void; onDelete: () => void; onAddAncestor: () => void; onAddDescendant: () => void; onAddSibling: () => void; position?: { left: string | number; top: string | number } }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const nodeRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -227,23 +262,33 @@ function PersonNode({ person, selected, onSelect, onDelete, onAddAncestor, onAdd
       <Link href={`/person/${person.id}`} className="node-action" onClick={() => setMenuOpen(false)} data-testid={`button-open-person-${person.id}`}><UserRound size={14} /> Открыть карточку</Link>
       <button className="node-action" onClick={() => { onAddAncestor(); setMenuOpen(false); }} data-testid={`button-add-ancestor-${person.id}`}><ArrowUp size={14} /> Добавить предков</button>
       <button className="node-action" onClick={() => { onAddDescendant(); setMenuOpen(false); }} data-testid={`button-add-descendant-${person.id}`}><ArrowDown size={14} /> Добавить наследников</button>
+      <button className="node-action" onClick={() => { onAddSibling(); setMenuOpen(false); }} data-testid={`button-add-sibling-${person.id}`}><Users size={14} /> Добавить брата/сестру</button>
       <button className="node-action node-action-danger" onClick={() => { onDelete(); setMenuOpen(false); }} data-testid={`button-delete-person-${person.id}`}><Trash2 size={14} /> Удалить</button>
     </div>}
   </div>;
 }
 
-function AddRelativeModal({ person, mode, onClose, onAdd }: { person: Person; mode: 'ancestor' | 'descendant'; onClose: () => void; onAdd: (data: { name: string; year: string; bio: string }) => void }) {
+type RelativeMode = 'ancestor' | 'descendant' | 'sibling';
+
+function AddRelativeModal({ person, mode, onClose, onAdd }: { person: Person; mode: RelativeMode; onClose: () => void; onAdd: (data: { name: string; year: string; bio: string }) => void }) {
   const [name, setName] = useState('');
   const [year, setYear] = useState('');
   const [bio, setBio] = useState('');
   const isAncestor = mode === 'ancestor';
-  return <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card content-card"><div className="modal-head"><div><span className="kicker">новая связь</span><h2 className="display-font">{isAncestor ? 'Добавить предка' : 'Добавить наследника'}</h2></div><button className="btn btn-ghost btn-icon" onClick={onClose} data-testid="button-close-add"><X size={18} /></button></div><p className="muted">{isAncestor ? `Добавьте человека, который был родителем для ${person.name}.` : `Добавьте человека, который является наследником для ${person.name}.`}</p><div className="form-field"><label htmlFor="relative-name">Имя и фамилия</label><input id="relative-name" className="form-input" placeholder="Например, Пётр Иванович Воронцов" value={name} onChange={(event) => setName(event.target.value)} data-testid="input-relative-name" /></div><div className="form-field"><label htmlFor="relative-year">Год рождения</label><input id="relative-year" className="form-input" placeholder="1898" value={year} onChange={(event) => setYear(event.target.value)} data-testid="input-relative-year" /></div><div className="form-field"><label htmlFor="relative-bio">Короткая заметка</label><textarea id="relative-bio" className="form-input" rows={3} placeholder="Что уже известно..." value={bio} onChange={(event) => setBio(event.target.value)} data-testid="input-relative-bio" /></div><button className="btn btn-primary" disabled={!name.trim()} onClick={() => onAdd({ name, year, bio })} data-testid={`button-submit-${mode}`}><Plus size={16} /> Добавить в дерево</button></div></div>;
+  const isSibling = mode === 'sibling';
+  const title = isAncestor ? 'Добавить предка' : isSibling ? 'Добавить брата или сестру' : 'Добавить наследника';
+  const description = isAncestor
+    ? `Добавьте человека, который был родителем для ${person.name}.`
+    : isSibling
+      ? `Новый человек будет добавлен в одну ветвь с ${person.name}.`
+      : `Добавьте человека, который является наследником для ${person.name}.`;
+  return <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card content-card"><div className="modal-head"><div><span className="kicker">новая связь</span><h2 className="display-font">{title}</h2></div><button className="btn btn-ghost btn-icon" onClick={onClose} data-testid="button-close-add"><X size={18} /></button></div><p className="muted">{description}</p><div className="form-field"><label htmlFor="relative-name">{isAncestor ? 'Имя и фамилия' : 'Имя'}</label><input id="relative-name" className="form-input" placeholder={isAncestor ? 'Например, Пётр Иванович Воронцов' : 'Например, Олег'} value={name} onChange={(event) => setName(event.target.value)} data-testid="input-relative-name" /></div><div className="form-field"><label htmlFor="relative-year">Год рождения</label><input id="relative-year" className="form-input" placeholder="1898" value={year} onChange={(event) => setYear(event.target.value)} data-testid="input-relative-year" /></div><div className="form-field"><label htmlFor="relative-bio">Короткая заметка</label><textarea id="relative-bio" className="form-input" rows={3} placeholder="Что уже известно..." value={bio} onChange={(event) => setBio(event.target.value)} data-testid="input-relative-bio" /></div><button className="btn btn-primary" disabled={!name.trim()} onClick={() => onAdd({ name, year, bio })} data-testid={`button-submit-${mode}`}><Plus size={16} /> Добавить в дерево</button></div></div>;
 }
 
 function TreePage() {
-  const { people, addAncestor, addDescendant, deletePerson, toast } = useArchive();
+  const { people, addAncestor, addDescendant, addSibling, deletePerson, toast } = useArchive();
   const [selectedId, setSelectedId] = useState('sofia');
-  const [addMode, setAddMode] = useState<'ancestor' | 'descendant' | null>(null);
+  const [addMode, setAddMode] = useState<RelativeMode | null>(null);
   const [scale, setScale] = useState(1);
   const selected = people.find((person) => person.id === selectedId) || people[0];
   const layout = useMemo(() => buildFullTreeLayout(people, selected.id), [people, selected.id]);
@@ -260,10 +305,21 @@ function TreePage() {
      <div className="full-tree-scroll" tabIndex={0} autoFocus onKeyDown={(event) => { const amount = 90; if (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.currentTarget.scrollBy({ top: event.key === 'ArrowUp' ? -amount : event.key === 'ArrowDown' ? amount : 0, left: event.key === 'ArrowLeft' ? -amount : event.key === 'ArrowRight' ? amount : 0, behavior: 'smooth' }); } }} data-testid="tree-workspace">
        <div className="full-tree-stage-shell" style={{ width: layout.width * scale, height: layout.height * scale }}><div className="full-tree-stage" style={{ width: layout.width, height: layout.height, transform: `scale(${scale})`, transformOrigin: 'top left', transition: 'transform .3s ease' }}>
          <svg className="full-tree-links" viewBox={`0 0 ${layout.width} ${layout.height}`} aria-hidden="true">{people.flatMap((person) => person.parents.map((parentId) => { const childPosition = layout.positions[person.id]; const parentPosition = layout.positions[parentId]; if (!childPosition || !parentPosition) return null; return <path key={`${person.id}-${parentId}`} className="tree-link" d={connectionPath(childPosition, parentPosition)} />; }))}</svg>
-         {people.map((person) => <PersonNode key={person.id} person={person} selected={person.id === selectedId} onSelect={() => setSelectedId(person.id)} onDelete={() => handleDelete(person)} onAddAncestor={() => setAddMode('ancestor')} onAddDescendant={() => setAddMode('descendant')} position={layout.positions[person.id]} />)}
+          {people.map((person) => <PersonNode key={person.id} person={person} selected={person.id === selectedId} onSelect={() => setSelectedId(person.id)} onDelete={() => handleDelete(person)} onAddAncestor={() => setAddMode('ancestor')} onAddDescendant={() => setAddMode('descendant')} onAddSibling={() => setAddMode('sibling')} position={layout.positions[person.id]} />)}
        </div></div>
      </div><div className="full-tree-help"><span>Кликните по карточке, чтобы открыть действия.</span><span>Фокус на схеме: стрелки двигают прокрутку.</span></div>
-     {addMode && <AddRelativeModal person={selected} mode={addMode} onClose={() => setAddMode(null)} onAdd={({ name, year, bio }) => { const newPerson: Person = { id: `person-${Date.now()}`, name, birthDate: { day: '', month: '', year }, deathDate: { day: '', month: '', year: '' }, isAlive: false, bio: bio || 'Пока нет заметки об этом человеке.', parents: addMode === 'ancestor' ? [] : [selected.id] }; if (addMode === 'ancestor') addAncestor(newPerson, selected.id); else addDescendant(newPerson); setSelectedId(newPerson.id); setAddMode(null); toast(addMode === 'ancestor' ? 'Предок добавлен в архив' : 'Наследник добавлен в архив'); }} />}
+      {addMode && <AddRelativeModal person={selected} mode={addMode} onClose={() => setAddMode(null)} onAdd={({ name, year, bio }) => {
+        const enteredName = name.trim();
+        const fullName = addMode !== 'ancestor' && enteredName.split(/\s+/).length === 1 ? `${enteredName} ${surnameOf(selected.name)}` : enteredName;
+        const parents = addMode === 'ancestor' ? [] : addMode === 'sibling' ? selected.parents : [selected.id];
+        const newPerson: Person = { id: `person-${Date.now()}`, name: fullName, birthDate: { day: '', month: '', year }, deathDate: { day: '', month: '', year: '' }, isAlive: false, bio: bio || 'Пока нет заметки об этом человеке.', parents };
+        if (addMode === 'ancestor') addAncestor(newPerson, selected.id);
+        else if (addMode === 'sibling') addSibling(newPerson);
+        else addDescendant(newPerson);
+        setSelectedId(newPerson.id);
+        setAddMode(null);
+        toast(addMode === 'ancestor' ? 'Предок добавлен в архив' : addMode === 'sibling' ? 'Брат или сестра добавлены в архив' : 'Наследник добавлен в архив');
+      }} />}
   </div></AppShell>;
 }
 
@@ -313,8 +369,9 @@ function App() {
   const updatePerson = (person: Person) => setPeople((current) => current.map((item) => item.id === person.id ? person : item));
   const addAncestor = (person: Person, parentId: string) => setPeople((current) => current.map((item) => item.id === parentId ? { ...item, parents: [...item.parents, person.id] } : item).concat(person));
   const addDescendant = (person: Person) => setPeople((current) => current.concat(person));
+  const addSibling = (person: Person) => setPeople((current) => current.concat(person));
   const deletePerson = (id: string) => setPeople((current) => current.filter((person) => person.id !== id).map((person) => ({ ...person, parents: person.parents.filter((parentId) => parentId !== id) })));
-  const contextValue = useMemo(() => ({ people, updatePerson, addAncestor, addDescendant, deletePerson, toast }), [people]);
+  const contextValue = useMemo(() => ({ people, updatePerson, addAncestor, addDescendant, addSibling, deletePerson, toast }), [people]);
   return <QueryClientProvider client={queryClient}><TooltipProvider><ArchiveContext.Provider value={contextValue}><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster /></ArchiveContext.Provider></TooltipProvider>{toastMessage && <ToastMessage message={toastMessage} onClose={() => setToastMessage('')} />}</QueryClientProvider>;
 }
 
