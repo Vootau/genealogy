@@ -44,7 +44,8 @@ const initials = (name: string) => name.split(' ').slice(0, 2).map((word) => wor
 const nameLines = (name: string) => {
   const words = name.trim().split(/\s+/).filter(Boolean);
   const surname = words.pop() || 'Без фамилии';
-  return { surname: surname.toUpperCase(), given: words.join(' ') || surname };
+  const firstName = words.shift() || 'Имя не указано';
+  return { surname: surname.toUpperCase(), firstName, patronymic: words.join(' ') };
 };
 const formatDate = (date: DatePart, alive: boolean) => {
   const dateText = [date.day, date.month, date.year].filter(Boolean).join('.');
@@ -219,9 +220,9 @@ function PersonNode({ person, selected, onSelect, onDelete, onAddAncestor, onAdd
     document.addEventListener('pointerdown', closeMenu);
     return () => document.removeEventListener('pointerdown', closeMenu);
   }, [menuOpen]);
-  const { surname, given } = nameLines(person.name);
+  const { surname, firstName, patronymic } = nameLines(person.name);
   return <div ref={nodeRef} className={`person-node ${selected ? 'selected' : ''}`} style={position} onClick={() => { onSelect(); setMenuOpen(true); }} data-testid={`card-person-${person.id}`}>
-    <div className="node-card-grid"><div className={`node-avatar ${person.photoUrl ? 'has-photo' : 'placeholder'}`}>{person.photoUrl ? <img src={person.photoUrl} alt="" /> : <span>{initials(person.name)}</span>}</div><div className="node-copy"><span className="node-menu-hint">действия</span><strong className="node-surname">{surname}</strong><span className="node-given">{given}</span></div></div>
+    <div className="node-card-grid"><div className={`node-avatar ${person.photoUrl ? 'has-photo' : 'placeholder'}`}>{person.photoUrl ? <img src={person.photoUrl} alt="" /> : <span>{initials(person.name)}</span>}</div><div className="node-copy"><strong className="node-surname">{surname}</strong><span className="node-first-name">{firstName}</span><span className="node-patronymic">{patronymic || '—'}</span></div></div>
     {menuOpen && <div className="node-action-menu" onClick={(event) => event.stopPropagation()}>
       <Link href={`/person/${person.id}`} className="node-action" onClick={() => setMenuOpen(false)} data-testid={`button-open-person-${person.id}`}><UserRound size={14} /> Открыть карточку</Link>
       <button className="node-action" onClick={() => { onAddAncestor(); setMenuOpen(false); }} data-testid={`button-add-ancestor-${person.id}`}><ArrowUp size={14} /> Добавить предков</button>
