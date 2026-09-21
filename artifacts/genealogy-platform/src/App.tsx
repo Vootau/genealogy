@@ -41,21 +41,79 @@ function useArchive() {
 }
 
 const initials = (name: string) => name.split(' ').slice(0, 2).map((word) => word[0]).join('');
+const nameLines = (name: string) => {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const surname = words.pop() || 'Без фамилии';
+  return { surname: surname.toUpperCase(), given: words.join(' ') || surname };
+};
 const formatDate = (date: DatePart, alive: boolean) => {
   const dateText = [date.day, date.month, date.year].filter(Boolean).join('.');
   return alive ? `${dateText || 'Дата не указана'} · сейчас` : `${dateText || 'Дата не указана'}`;
 };
-const treePositions: Record<string, { left: string; top: string }> = {
-  sofia: { left: '39%', top: '7%' },
-  mikhail: { left: '27%', top: '29%' },
-  natalia: { left: '57%', top: '29%' },
-  alexei: { left: '17%', top: '51%' },
-  elena: { left: '57%', top: '51%' },
-  sergei: { left: '4%', top: '74%' },
-  maria: { left: '27%', top: '74%' },
-  ivan: { left: '52%', top: '74%' },
-  anna: { left: '75%', top: '74%' },
-};
+type DiagramPosition = { left: number; top: number };
+type DiagramLayout = { width: number; height: number; positions: Record<string, DiagramPosition> };
+const TREE_CARD_WIDTH = 280;
+const TREE_CARD_HEIGHT = 112;
+
+const birthYear = (person: Person) => Number.parseInt(person.birthDate.year, 10) || Number.MAX_SAFE_INTEGER;
+
+function buildFullTreeLayout(people: Person[], rootId: string): DiagramLayout {
+  const depth = new Map<string, number>([[rootId, 0]]);
+  const queue = [rootId];
+  while (queue.length) {
+    const currentId = queue.shift()!;
+    const currentDepth = depth.get(currentId) || 0;
+    const current = people.find((person) => person.id === currentId);
+    if (!current) continue;
+    const relatedIds = [
+      ...current.parents,
+      ...people.filter((person) => person.parents.includes(currentId)).map((person) => person.id),
+    ];
+    relatedIds.forEach((relatedId) => {
+      if (!people.some((person) => person.id === relatedId) || depth.has(relatedId)) return;
+      const related = people.find((person) => person.id === relatedId);
+      const isParent = current.parents.includes(relatedId);
+      depth.set(relatedId, currentDepth + (isParent ? 1 : -1));
+      queue.push(relatedId);
+    });
+  }
+  people.forEach((person) => {
+    if (!depth.has(person.id)) depth.set(person.id, 0);
+  });
+
+  const levels = new Map<number, Person[]>();
+  people.forEach((person) => {
+    const level = levels.get(depth.get(person.id) || 0) || [];
+    level.push(person);
+    levels.set(depth.get(person.id) || 0, level);
+  });
+  const orderedLevels = [...levels.entries()].sort(([a], [b]) => a - b);
+  const cardWidth = TREE_CARD_WIDTH;
+  const columnGap = 70;
+  const rowGap = 58;
+  const width = Math.max(1280, ...orderedLevels.map(([, level]) => level.length * cardWidth + Math.max(0, level.length - 1) * columnGap + 120));
+  const height = Math.max(720, orderedLevels.length * TREE_CARD_HEIGHT + Math.max(0, orderedLevels.length - 1) * rowGap + 120);
+  const positions: Record<string, DiagramPosition> = {};
+
+  orderedLevels.forEach(([, level], rowIndex) => {
+    const sorted = [...level].sort((a, b) => birthYear(a) - birthYear(b) || a.name.localeCompare(b.name, 'ru'));
+    const rowWidth = sorted.length * cardWidth + Math.max(0, sorted.length - 1) * columnGap;
+    const startLeft = (width - rowWidth) / 2;
+    sorted.forEach((person, index) => {
+      positions[person.id] = { left: startLeft + index * (cardWidth + columnGap), top: 56 + rowIndex * (TREE_CARD_HEIGHT + rowGap) };
+    });
+  });
+  return { width, height, positions };
+}
+
+function connectionPath(child: DiagramPosition, parent: DiagramPosition) {
+  const childCenter = child.left + TREE_CARD_WIDTH / 2;
+  const parentCenter = parent.left + TREE_CARD_WIDTH / 2;
+  const childBottom = child.top + TREE_CARD_HEIGHT;
+  const parentTop = parent.top;
+  const midpoint = childBottom + (parentTop - childBottom) / 2;
+  return `M ${childCenter} ${childBottom} V ${midpoint} H ${parentCenter} V ${parentTop}`;
+}
 
 function ToastMessage({ message, onClose }: { message: string; onClose: () => void }) {
   useEffect(() => { const timer = window.setTimeout(onClose, 3000); return () => window.clearTimeout(timer); }, [message, onClose]);
@@ -150,7 +208,7 @@ function AppShell({ children }: { children: ReactNode }) {
   return <div className="app-layout"><AppSidebar /><main className="main-area">{children}</main></div>;
 }
 
-function PersonNode({ person, selected, onSelect, onDelete, onAddAncestor, onAddDescendant }: { person: Person; selected: boolean; onSelect: () => void; onDelete: () => void; onAddAncestor: () => void; onAddDescendant: () => void }) {
+function PersonNode({ person, selected, onSelect, onDelete, onAddAncestor, onAddDescendant, position }: { person: Person; selected: boolean; onSelect: () => void; onDelete: () => void; onAddAncestor: () => void; onAddDescendant: () => void; position?: { left: string | number; top: string | number } }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const nodeRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -161,10 +219,9 @@ function PersonNode({ person, selected, onSelect, onDelete, onAddAncestor, onAdd
     document.addEventListener('pointerdown', closeMenu);
     return () => document.removeEventListener('pointerdown', closeMenu);
   }, [menuOpen]);
-  const position = treePositions[person.id] || { left: '39%', top: '70%' };
+  const { surname, given } = nameLines(person.name);
   return <div ref={nodeRef} className={`person-node ${selected ? 'selected' : ''}`} style={position} onClick={() => { onSelect(); setMenuOpen(true); }} data-testid={`card-person-${person.id}`}>
-    <div className="node-top"><div className="node-avatar">{initials(person.name)}</div><span className="node-menu-hint">действия</span></div>
-    <h3>{person.name}</h3><p>{formatDate(person.birthDate, person.isAlive)}</p>
+    <div className="node-card-grid"><div className={`node-avatar ${person.photoUrl ? 'has-photo' : 'placeholder'}`}>{person.photoUrl ? <img src={person.photoUrl} alt="" /> : <span>{initials(person.name)}</span>}</div><div className="node-copy"><span className="node-menu-hint">действия</span><strong className="node-surname">{surname}</strong><span className="node-given">{given}</span></div></div>
     {menuOpen && <div className="node-action-menu" onClick={(event) => event.stopPropagation()}>
       <Link href={`/person/${person.id}`} className="node-action" onClick={() => setMenuOpen(false)} data-testid={`button-open-person-${person.id}`}><UserRound size={14} /> Открыть карточку</Link>
       <button className="node-action" onClick={() => { onAddAncestor(); setMenuOpen(false); }} data-testid={`button-add-ancestor-${person.id}`}><ArrowUp size={14} /> Добавить предков</button>
@@ -184,14 +241,27 @@ function AddRelativeModal({ person, mode, onClose, onAdd }: { person: Person; mo
 
 function TreePage() {
   const { people, addAncestor, addDescendant, deletePerson, toast } = useArchive();
-  const [selectedId, setSelectedId] = useState('mikhail');
+  const [selectedId, setSelectedId] = useState('sofia');
   const [addMode, setAddMode] = useState<'ancestor' | 'descendant' | null>(null);
   const [scale, setScale] = useState(1);
   const selected = people.find((person) => person.id === selectedId) || people[0];
+  const layout = useMemo(() => buildFullTreeLayout(people, selected.id), [people, selected.id]);
+  const handleDelete = (person: Person) => {
+    if (window.confirm(`Удалить ${person.name} из архива?`)) {
+      deletePerson(person.id);
+      toast('Запись удалена из дерева');
+    }
+  };
   return <AppShell><div className="main-content">
-     <div className="page-header"><div><span className="kicker">семья воронцовых</span><h1>Семейное дерево</h1><p>Сохраняйте связи, чтобы ни одна ветвь не затерялась.</p></div><div className="header-actions"><Link href={`/person/${selected.id}`} className="btn btn-soft" data-testid="button-open-person"><UserRound size={15} /> Открыть карточку</Link><button className="btn btn-primary" onClick={() => setAddMode('ancestor')} data-testid="button-add-ancestor"><Plus size={16} /> Добавить предка</button></div></div>
+     <div className="page-header"><div><span className="kicker">семья воронцовых</span><h1>Семейное дерево</h1><p>Интерактивная схема всего семейного архива.</p></div><div className="header-actions"><Link href={`/person/${selected.id}`} className="btn btn-soft" data-testid="button-open-person"><UserRound size={15} /> Открыть карточку</Link><button className="btn btn-primary" onClick={() => setAddMode('ancestor')} data-testid="button-add-ancestor"><Plus size={16} /> Добавить предка</button></div></div>
     <div className="stats-row"><div className="content-card stat-card"><span className="kicker">людей в архиве</span><span className="stat-number">{people.length}</span><p>три поколения семьи</p></div><div className="content-card stat-card"><span className="kicker">самая ранняя дата</span><span className="stat-number">1904</span><p>Сергей Андреевич</p></div><div className="content-card stat-card"><span className="kicker">связей</span><span className="stat-number">{people.reduce((sum, person) => sum + person.parents.length, 0)}</span><p>между людьми</p></div></div>
-     <div className="tree-workspace" data-testid="tree-workspace"><div className="workspace-top"><div className="crumb"><BookOpen size={14} /> Архив / <strong>Воронцовы</strong></div><div className="zoom-tools"><button onClick={() => setScale((value) => Math.min(1.18, value + .06))} aria-label="Увеличить" data-testid="button-zoom-in"><ZoomIn size={15} /></button><button onClick={() => setScale(1)} aria-label="Сбросить масштаб" data-testid="button-reset-zoom"><span className="mono" style={{ fontSize: 9 }}>{Math.round(scale * 100)}%</span></button><button onClick={() => setScale((value) => Math.max(.86, value - .06))} aria-label="Уменьшить" data-testid="button-zoom-out"><ZoomOut size={15} /></button></div></div><div className="tree-canvas"><div style={{ position: 'absolute', inset: 0, transform: `scale(${scale})`, transformOrigin: 'center', transition: 'transform .3s ease' }}><svg className="tree-links" viewBox="0 0 1000 650" preserveAspectRatio="none"><path className="tree-link" d="M485 177 V183 H365 V188" /><path className="tree-link" d="M485 177 V183 H665 V188" /><path className="tree-link" d="M365 320 V327 H265 V331" /><path className="tree-link" d="M365 320 V327 H665 V331" /><path className="tree-link" d="M265 463 V470 H135 V481" /><path className="tree-link" d="M265 463 V470 H365 V481" /><path className="tree-link" d="M665 463 V470 H615 V481" /><path className="tree-link" d="M665 463 V470 H845 V481" /></svg>{people.map((person) => <PersonNode key={person.id} person={person} selected={person.id === selectedId} onSelect={() => setSelectedId(person.id)} onDelete={() => { if (window.confirm(`Удалить ${person.name} из архива?`)) { deletePerson(person.id); toast('Запись удалена из дерева'); } }} onAddAncestor={() => setAddMode('ancestor')} onAddDescendant={() => setAddMode('descendant')} />)}</div></div><div className="tree-hint">Перетаскивайте и масштабируйте дерево</div></div>
+     <div className="full-tree-toolbar tree-archive-toolbar"><div className="crumb"><BookOpen size={14} /> Архив / <strong>Воронцовы</strong></div><div className="tree-toolbar-right"><span><strong>{people.length}</strong> записей · <span className="mono">↑ ↓ ← →</span> навигация</span><div className="zoom-tools"><button onClick={() => setScale((value) => Math.min(1.18, value + .06))} aria-label="Увеличить" data-testid="button-zoom-in"><ZoomIn size={15} /></button><button onClick={() => setScale(1)} aria-label="Сбросить масштаб" data-testid="button-reset-zoom"><span className="mono" style={{ fontSize: 9 }}>{Math.round(scale * 100)}%</span></button><button onClick={() => setScale((value) => Math.max(.86, value - .06))} aria-label="Уменьшить" data-testid="button-zoom-out"><ZoomOut size={15} /></button></div></div></div>
+     <div className="full-tree-scroll" tabIndex={0} autoFocus onKeyDown={(event) => { const amount = 90; if (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); event.currentTarget.scrollBy({ top: event.key === 'ArrowUp' ? -amount : event.key === 'ArrowDown' ? amount : 0, left: event.key === 'ArrowLeft' ? -amount : event.key === 'ArrowRight' ? amount : 0, behavior: 'smooth' }); } }} data-testid="tree-workspace">
+       <div className="full-tree-stage-shell" style={{ width: layout.width * scale, height: layout.height * scale }}><div className="full-tree-stage" style={{ width: layout.width, height: layout.height, transform: `scale(${scale})`, transformOrigin: 'top left', transition: 'transform .3s ease' }}>
+         <svg className="full-tree-links" viewBox={`0 0 ${layout.width} ${layout.height}`} aria-hidden="true">{people.flatMap((person) => person.parents.map((parentId) => { const childPosition = layout.positions[person.id]; const parentPosition = layout.positions[parentId]; if (!childPosition || !parentPosition) return null; return <path key={`${person.id}-${parentId}`} className="tree-link" d={connectionPath(childPosition, parentPosition)} />; }))}</svg>
+         {people.map((person) => <PersonNode key={person.id} person={person} selected={person.id === selectedId} onSelect={() => setSelectedId(person.id)} onDelete={() => handleDelete(person)} onAddAncestor={() => setAddMode('ancestor')} onAddDescendant={() => setAddMode('descendant')} position={layout.positions[person.id]} />)}
+       </div></div>
+     </div><div className="full-tree-help"><span>Кликните по карточке, чтобы открыть действия.</span><span>Фокус на схеме: стрелки двигают прокрутку.</span></div>
      {addMode && <AddRelativeModal person={selected} mode={addMode} onClose={() => setAddMode(null)} onAdd={({ name, year, bio }) => { const newPerson: Person = { id: `person-${Date.now()}`, name, birthDate: { day: '', month: '', year }, deathDate: { day: '', month: '', year: '' }, isAlive: false, bio: bio || 'Пока нет заметки об этом человеке.', parents: addMode === 'ancestor' ? [] : [selected.id] }; if (addMode === 'ancestor') addAncestor(newPerson, selected.id); else addDescendant(newPerson); setSelectedId(newPerson.id); setAddMode(null); toast(addMode === 'ancestor' ? 'Предок добавлен в архив' : 'Наследник добавлен в архив'); }} />}
   </div></AppShell>;
 }
