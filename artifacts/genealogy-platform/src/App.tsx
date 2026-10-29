@@ -33,7 +33,7 @@ const initialPeople: Person[] = [
   { id: 'mikhail', name: 'Михаил Алексеевич Воронцов', birthDate: { day: '21', month: '07', year: '1962' }, deathDate: { day: '', month: '', year: '' }, isAlive: true, bio: 'Родился в Костроме, сейчас живёт в Санкт-Петербурге. Архитектор, любит деревянные дома и долгие прогулки по набережной.', parents: ['alexei', 'elena'], spouses: ['natalia'] },
   { id: 'natalia', name: 'Наталья Олеговна Воронцова', birthDate: { day: '30', month: '01', year: '1965' }, deathDate: { day: '', month: '', year: '' }, isAlive: true, bio: 'Редактор и хранительница семейных историй. Ведёт этот архив.', parents: [], spouses: ['mikhail'] },
   { id: 'sofia', name: 'Софья Михайловна Воронцова', birthDate: { day: '14', month: '08', year: '1996' }, deathDate: { day: '', month: '', year: '' }, isAlive: true, bio: 'Изучает городскую антропологию. Собирает устные рассказы и старые рецепты.', parents: ['mikhail', 'natalia'] },
-  { id: 'ivan-son', name: 'Иван Воронцов', birthDate: { day: '', month: '', year: '' }, deathDate: { day: '', month: '', year: '' }, isAlive: true, bio: 'Сын Михаила и Натальи.', parents: ['mikhail', 'natalia'] },
+  { id: 'ivan-son', name: 'Иван Михайлович Воронцов', birthDate: { day: '', month: '', year: '' }, deathDate: { day: '', month: '', year: '' }, isAlive: true, bio: 'Сын Михаила и Натальи.', parents: ['mikhail', 'natalia'] },
 ];
 
 type ArchiveContextValue = { people: Person[]; updatePerson: (person: Person) => void; addAncestor: (person: Person, parentId: string) => void; addDescendant: (person: Person) => void; addSibling: (person: Person) => void; addSpouse: (person: Person, spouseId: string) => void; deletePerson: (id: string) => void; toast: (message: string) => void };
@@ -52,6 +52,27 @@ const nameLines = (name: string) => {
   return { surname: surname.toUpperCase(), firstName, patronymic: words.join(' ') };
 };
 const surnameOf = (name: string) => name.trim().split(/\s+/).filter(Boolean).pop() || '';
+const patronymicExceptions: Record<string, { male: string; female: string }> = {
+  михаил: { male: 'Михайлович', female: 'Михайловна' },
+  павел: { male: 'Павлович', female: 'Павловна' },
+  лев: { male: 'Львович', female: 'Львовна' },
+  пётр: { male: 'Петрович', female: 'Петровна' },
+  фома: { male: 'Фомич', female: 'Фоминична' },
+  илья: { male: 'Ильич', female: 'Ильинична' },
+};
+function makePatronymic(fatherName: string, childGender: 'male' | 'female') {
+  const firstName = fatherName.trim().split(/\s+/)[0] || '';
+  const normalized = firstName.toLocaleLowerCase('ru-RU');
+  const exception = patronymicExceptions[normalized];
+  if (exception) return exception[childGender];
+
+  const ending = normalized.at(-1);
+  const stem = firstName.slice(0, -1);
+  if (ending === 'а') return `${stem}${childGender === 'male' ? 'ич' : 'ична'}`;
+  if (ending === 'я') return `${stem}${childGender === 'male' ? 'ич' : 'инична'}`;
+  if (ending === 'й' || ending === 'ь') return `${stem}${childGender === 'male' ? 'евич' : 'евна'}`;
+  return `${firstName}${childGender === 'male' ? 'ович' : 'овна'}`;
+}
 const formatDate = (date: DatePart, alive: boolean) => {
   const dateText = [date.day, date.month, date.year].filter(Boolean).join('.');
   return alive ? `${dateText || 'Дата не указана'} · сейчас` : `${dateText || 'Дата не указана'}`;
@@ -348,13 +369,16 @@ function PersonNode({ person, selected, onSelect, onDelete, onAddAncestor, onAdd
 
 type RelativeMode = 'ancestor' | 'descendant' | 'sibling' | 'spouse';
 
-function AddRelativeModal({ person, mode, onClose, onAdd }: { person: Person; mode: RelativeMode; onClose: () => void; onAdd: (data: { name: string; year: string; bio: string }) => void }) {
+function AddRelativeModal({ person, mode, fatherCandidates, onClose, onAdd }: { person: Person; mode: RelativeMode; fatherCandidates: Person[]; onClose: () => void; onAdd: (data: { name: string; year: string; bio: string; childGender?: 'male' | 'female'; fatherFirstName?: string }) => void }) {
   const [name, setName] = useState('');
   const [year, setYear] = useState('');
   const [bio, setBio] = useState('');
+  const [childGender, setChildGender] = useState<'male' | 'female' | ''>('');
+  const [fatherFirstName, setFatherFirstName] = useState('');
   const isAncestor = mode === 'ancestor';
   const isSibling = mode === 'sibling';
   const isSpouse = mode === 'spouse';
+  const isDescendant = mode === 'descendant';
   const title = isAncestor ? 'Добавить предка' : isSibling ? 'Добавить брата или сестру' : isSpouse ? 'Добавить супруга или супругу' : 'Добавить наследника';
   const description = isAncestor
     ? `Добавьте человека, который был родителем для ${person.name}.`
@@ -363,7 +387,7 @@ function AddRelativeModal({ person, mode, onClose, onAdd }: { person: Person; mo
       : isSpouse
         ? `Новый человек будет связан с ${person.name} как супруг или супруга.`
       : `Добавьте человека, который является наследником для ${person.name}.`;
-  return <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card content-card"><div className="modal-head"><div><span className="kicker">новая связь</span><h2 className="display-font">{title}</h2></div><button className="btn btn-ghost btn-icon" onClick={onClose} data-testid="button-close-add"><X size={18} /></button></div><p className="muted">{description}</p><div className="form-field"><label htmlFor="relative-name">{isAncestor || isSpouse ? 'Имя и фамилия' : 'Имя'}</label><input id="relative-name" className="form-input" placeholder={isAncestor ? 'Например, Пётр Иванович Воронцов' : isSpouse ? 'Например, Наталья Иванова' : 'Например, Олег'} value={name} onChange={(event) => setName(event.target.value)} data-testid="input-relative-name" /></div><div className="form-field"><label htmlFor="relative-year">Год рождения</label><input id="relative-year" className="form-input" placeholder="1898" value={year} onChange={(event) => setYear(event.target.value)} data-testid="input-relative-year" /></div><div className="form-field"><label htmlFor="relative-bio">Короткая заметка</label><textarea id="relative-bio" className="form-input" rows={3} placeholder="Что уже известно..." value={bio} onChange={(event) => setBio(event.target.value)} data-testid="input-relative-bio" /></div><button className="btn btn-primary" disabled={!name.trim()} onClick={() => onAdd({ name, year, bio })} data-testid={`button-submit-${mode}`}><Plus size={16} /> Добавить в дерево</button></div></div>;
+  return <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal-card content-card"><div className="modal-head"><div><span className="kicker">новая связь</span><h2 className="display-font">{title}</h2></div><button className="btn btn-ghost btn-icon" onClick={onClose} data-testid="button-close-add"><X size={18} /></button></div><p className="muted">{description}</p><div className="form-field"><label htmlFor="relative-name">{isAncestor || isSpouse ? 'Имя и фамилия' : 'Имя'}</label><input id="relative-name" className="form-input" placeholder={isAncestor ? 'Например, Пётр Иванович Воронцов' : isSpouse ? 'Например, Наталья Иванова' : 'Например, Олег'} value={name} onChange={(event) => setName(event.target.value)} data-testid="input-relative-name" /></div>{isDescendant && <><div className="form-field"><label htmlFor="relative-gender">Пол ребёнка</label><select id="relative-gender" className="form-input" value={childGender} onChange={(event) => setChildGender(event.target.value as 'male' | 'female' | '')} data-testid="select-relative-gender"><option value="">Выберите</option><option value="male">Мальчик</option><option value="female">Девочка</option></select></div><div className="form-field"><label htmlFor="relative-father">Имя отца для отчества</label><input id="relative-father" className="form-input" list="relative-father-options" placeholder="Например, Михаил" value={fatherFirstName} onChange={(event) => setFatherFirstName(event.target.value)} data-testid="input-relative-father" /><datalist id="relative-father-options">{fatherCandidates.map((candidate) => <option key={candidate.id} value={nameLines(candidate.name).firstName} />)}</datalist></div></>}<div className="form-field"><label htmlFor="relative-year">Год рождения</label><input id="relative-year" className="form-input" placeholder="1898" value={year} onChange={(event) => setYear(event.target.value)} data-testid="input-relative-year" /></div><div className="form-field"><label htmlFor="relative-bio">Короткая заметка</label><textarea id="relative-bio" className="form-input" rows={3} placeholder="Что уже известно..." value={bio} onChange={(event) => setBio(event.target.value)} data-testid="input-relative-bio" /></div><button className="btn btn-primary" disabled={!name.trim() || (isDescendant && (!childGender || !fatherFirstName.trim()))} onClick={() => onAdd({ name, year, bio, childGender: childGender || undefined, fatherFirstName: fatherFirstName.trim() || undefined })} data-testid={`button-submit-${mode}`}><Plus size={16} /> Добавить в дерево</button></div></div>;
 }
 
 function TreePage() {
@@ -412,9 +436,11 @@ function TreePage() {
           {visiblePeople.map((person) => <PersonNode key={person.id} person={person} selected={person.id === selectedId} onSelect={() => selectPerson(person.id)} onDelete={() => handleDelete(person)} onAddAncestor={() => setAddMode('ancestor')} onAddDescendant={() => setAddMode('descendant')} onAddSibling={() => setAddMode('sibling')} onAddSpouse={() => setAddMode('spouse')} position={layout.positions[person.id]} />)}
        </div></div>
       </div><div className="full-tree-help"><span>Нажмите карточку супруга или супруги, чтобы открыть их ветвь.</span><span className="tree-legend"><i className="legend-parent-line" /> родитель — ребёнок <i className="legend-spouse-line" /> супруги</span><span>Стрелки клавиатуры прокручивают схему.</span></div>
-      {addMode && <AddRelativeModal person={selected} mode={addMode} onClose={() => setAddMode(null)} onAdd={({ name, year, bio }) => {
+      {addMode && <AddRelativeModal person={selected} mode={addMode} fatherCandidates={descendantParents.map((parentId) => people.find((person) => person.id === parentId)).filter((person): person is Person => Boolean(person))} onClose={() => setAddMode(null)} onAdd={({ name, year, bio, childGender, fatherFirstName }) => {
         const enteredName = name.trim();
-        const fullName = (addMode === 'descendant' || addMode === 'sibling') && enteredName.split(/\s+/).length === 1 ? `${enteredName} ${surnameOf(selected.name)}` : enteredName;
+         const fullName = addMode === 'descendant' && enteredName.split(/\s+/).length === 1 && childGender && fatherFirstName
+           ? `${enteredName} ${makePatronymic(fatherFirstName, childGender)} ${surnameOf(selected.name)}`
+           : (addMode === 'descendant' || addMode === 'sibling') && enteredName.split(/\s+/).length === 1 ? `${enteredName} ${surnameOf(selected.name)}` : enteredName;
         const parents = addMode === 'ancestor' || addMode === 'spouse' ? [] : addMode === 'sibling' ? selected.parents : descendantParents;
         const newPerson: Person = { id: `person-${Date.now()}`, name: fullName, birthDate: { day: '', month: '', year }, deathDate: { day: '', month: '', year: '' }, isAlive: false, bio: bio || 'Пока нет заметки об этом человеке.', parents };
         if (addMode === 'ancestor') addAncestor(newPerson, selected.id);
