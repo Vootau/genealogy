@@ -33,6 +33,7 @@ const initialPeople: Person[] = [
   { id: 'mikhail', name: 'Михаил Алексеевич Воронцов', birthDate: { day: '21', month: '07', year: '1962' }, deathDate: { day: '', month: '', year: '' }, isAlive: true, bio: 'Родился в Костроме, сейчас живёт в Санкт-Петербурге. Архитектор, любит деревянные дома и долгие прогулки по набережной.', parents: ['alexei', 'elena'], spouses: ['natalia'] },
   { id: 'natalia', name: 'Наталья Олеговна Воронцова', birthDate: { day: '30', month: '01', year: '1965' }, deathDate: { day: '', month: '', year: '' }, isAlive: true, bio: 'Редактор и хранительница семейных историй. Ведёт этот архив.', parents: [], spouses: ['mikhail'] },
   { id: 'sofia', name: 'Софья Михайловна Воронцова', birthDate: { day: '14', month: '08', year: '1996' }, deathDate: { day: '', month: '', year: '' }, isAlive: true, bio: 'Изучает городскую антропологию. Собирает устные рассказы и старые рецепты.', parents: ['mikhail', 'natalia'] },
+  { id: 'ivan-son', name: 'Иван Воронцов', birthDate: { day: '', month: '', year: '' }, deathDate: { day: '', month: '', year: '' }, isAlive: true, bio: 'Сын Михаила и Натальи.', parents: ['mikhail', 'natalia'] },
 ];
 
 type ArchiveContextValue = { people: Person[]; updatePerson: (person: Person) => void; addAncestor: (person: Person, parentId: string) => void; addDescendant: (person: Person) => void; addSibling: (person: Person) => void; addSpouse: (person: Person, spouseId: string) => void; deletePerson: (id: string) => void; toast: (message: string) => void };
@@ -81,7 +82,13 @@ function getFamilyBranchPeople(people: Person[], focusId: string): Person[] {
   includeAncestors([focusId]);
   const focusSpouses = byId.get(focusId)?.spouses || [];
   focusSpouses.forEach(includePerson);
-  const descendants = [...focusSpouses, focusId];
+  const focusParents = byId.get(focusId)?.parents || [];
+  const focusSiblings = people.filter((person) => person.id !== focusId && person.parents.some((parentId) => focusParents.includes(parentId)));
+  focusSiblings.forEach((sibling) => {
+    includePerson(sibling.id);
+    (sibling.spouses || []).forEach(includePerson);
+  });
+  const descendants = [...focusSpouses, ...focusSiblings.flatMap((sibling) => [sibling.id, ...(sibling.spouses || [])]), focusId];
   const expanded = new Set<string>();
   while (descendants.length) {
     const id = descendants.shift()!;
@@ -327,7 +334,7 @@ function PersonNode({ person, selected, onSelect, onDelete, onAddAncestor, onAdd
   }, [menuOpen]);
   const { surname, firstName, patronymic } = nameLines(person.name);
   return <div ref={nodeRef} className={`person-node ${selected ? 'selected' : ''}`} style={position} onClick={() => { onSelect(); setMenuOpen(true); }} data-testid={`card-person-${person.id}`}>
-    <div className="node-card-grid"><div className={`node-avatar ${person.photoUrl ? 'has-photo' : 'placeholder'}`}>{person.photoUrl ? <img src={person.photoUrl} alt="" /> : <span>{initials(person.name)}</span>}</div><div className="node-copy"><strong className="node-surname">{surname}</strong><span className="node-first-name">{firstName}</span><span className="node-patronymic">{patronymic || '—'}</span></div></div>
+    <div className="node-card-grid"><div className={`node-avatar ${person.photoUrl ? 'has-photo' : 'placeholder'}`}>{person.photoUrl ? <img src={person.photoUrl} alt="" /> : <span>{initials(person.name)}</span>}</div><div className="node-copy"><strong className="node-surname">{surname}</strong><span className="node-first-name">{firstName}</span><span className="node-patronymic">{patronymic || '\u00a0'}</span></div></div>
     {menuOpen && <div className="node-action-menu" onClick={(event) => event.stopPropagation()}>
       <Link href={`/person/${person.id}`} className="node-action" onClick={() => setMenuOpen(false)} data-testid={`button-open-person-${person.id}`}><UserRound size={14} /> Открыть карточку</Link>
       <button className="node-action" onClick={() => { onAddAncestor(); setMenuOpen(false); }} data-testid={`button-add-ancestor-${person.id}`}><ArrowUp size={14} /> Добавить предков</button>
